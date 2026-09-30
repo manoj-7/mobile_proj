@@ -25,6 +25,26 @@ python -m mobile_price_predictor.train --data data/train.csv --output models/ --
 python -m streamlit run src/mobile_price_predictor/ui.py
 ```
 
+API (required)
+
+This project now requires the backend API for the UI to function — the UI no longer loads models locally. You must configure the API URL either in `config.yaml` or via the `MOBILE_API_URL` environment variable.
+
+Add to `config.yaml`:
+
+```yaml
+api:
+	url: http://localhost:8000
+```
+
+Or set environment variable (PowerShell):
+
+```powershell
+$env:MOBILE_API_URL = "http://localhost:8000"
+streamlit run src/mobile_price_predictor/ui.py
+```
+
+See `API_CONTRACT.md` for the full backend contract (endpoints, request/response schemas, examples, and error codes).
+
 4. Run batch predictions from CSV:
 
 ```bash

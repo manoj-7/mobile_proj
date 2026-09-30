@@ -6,3 +6,5 @@ data:
 paths:
   model: models/rf.joblib
   predictions: predictions.csv
+api:
+  url: "http://localhost:8000"

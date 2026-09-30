@@ -5,6 +5,8 @@ import joblib
 import pandas as pd
 import re
 import streamlit as st
+import requests
+import os
 
 from mobile_price_predictor.config import load_config
 
@@ -92,8 +94,85 @@ def available_features(sample_df: pd.DataFrame | None):
 
 def main():
     st.set_page_config(page_title="Mobile Price Predictor", layout="wide")
-    st.title("Mobile Price Predictor — Inference UI")
+    st.title("Mobile Price Predictor — Inference UI (API-backed)")
     cfg = get_config()
+
+    # Require API URL — no local fallback allowed
+    api_url = os.environ.get("MOBILE_API_URL") or (cfg.get("api") or {}).get("url")
+    if not api_url:
+        st.error("API URL is not configured. Set MOBILE_API_URL env var or add 'api.url' in config.yaml.")
+        return
+
+    st.info(f"Using backend API at {api_url}")
+
+    # fetch model names from API
+    try:
+        resp = requests.get(f"{api_url.rstrip('/')}/models", timeout=3)
+        resp.raise_for_status()
+        api_models = resp.json()
+    except Exception as exc:
+        st.error(f"Failed to query models from API: {exc}")
+        api_models = []
+
+    model_choice = st.selectbox("Select model file", options=[""] + api_models)
+
+    sample_df = load_sample_df(cfg)
+
+    st.markdown("---")
+    st.write("Select features to use in prediction and enter values below.")
+
+    # prefer model-provided features in the future; for now use sample data or descriptions
+    cols = available_features(sample_df)
+    cols = [c for c in cols if c != "id"]
+    display_options = [feature_display(c) for c in cols]
+    selection = st.multiselect("Choose features", options=display_options)
+
+    selected_cols = []
+    for disp in selection:
+        if disp.endswith(")") and "(" in disp:
+            col = disp.split("(")[-1].rstrip(")")
+        else:
+            col = disp
+        if col in cols:
+            selected_cols.append(col)
+
+    st.header("Enter feature values")
+    if selected_cols:
+        st.write("Selected features:")
+        for c in selected_cols:
+            st.write(f"- {feature_label(c)}")
+    else:
+        st.write("No features selected")
+
+    inputs = {}
+    if st.button("Reset fields"):
+        for c in selected_cols:
+            key = f"inp_{c}"
+            if key in st.session_state:
+                st.session_state[key] = ""
+    for c in selected_cols:
+        val = st.text_input(f"{feature_label(c)}", key=f"inp_{c}")
+        inputs[c] = {"value": val, "type": "text"}
+
+    if st.button("Predict"):
+        payload = {"features": {}}
+        for k, meta in inputs.items():
+            sval = meta.get("value")
+            if sval is None or sval == "":
+                continue
+            try:
+                payload["features"][k] = float(sval)
+            except Exception:
+                payload["features"][k] = sval
+        if model_choice:
+            payload["model"] = model_choice
+        try:
+            r = requests.post(f"{api_url.rstrip('/')}/predict", json=payload, timeout=5)
+            r.raise_for_status()
+            data = r.json()
+            st.success(f"Prediction: {data.get('predictions')}")
+        except Exception as exc:
+            st.error(f"API request failed: {exc}")
 
     models = list_models(cfg)
     if not models:
