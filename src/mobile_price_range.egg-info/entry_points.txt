@@ -1,0 +1,3 @@
+[console_scripts]
+predict = mobile_price_predictor.predict:main
+train = mobile_price_predictor.train:main

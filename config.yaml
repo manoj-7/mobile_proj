@@ -1,0 +1,8 @@
+# Project configuration. Edit the paths below to match your local files.
+data:
+  train: "C:/Users/venka/Downloads/train.csv"
+  test: "C:/Users/venka/Downloads/test.csv"
+
+paths:
+  model: models/rf.joblib
+  predictions: predictions.csv
