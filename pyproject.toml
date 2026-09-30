@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mobile-price-range"
+version = "0.1.0"
+description = "Mobile price-range prediction (Kaggle)"
+authors = [ { name = "Bob's Team", email = "dev@example.com" } ]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "pandas>=1.5",
+  "numpy>=1.24",
+  "scikit-learn>=1.2",
+  "xgboost>=1.7",
+  "matplotlib>=3.6",
+  "seaborn>=0.12",
+  "joblib>=1.2",
+  "jupyter>=1.0",
+  "pyyaml>=6.0",
+]
+
+[project.scripts]
+train = "mobile_price_predictor.train:main"
+predict = "mobile_price_predictor.predict:main"
+
+[tool]
+# UV-specific configuration can be added here if needed by your environment
