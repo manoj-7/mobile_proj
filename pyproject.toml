@@ -12,14 +12,6 @@ dependencies = [
   "scikit-learn",
   "joblib",
   "streamlit",
-  "pyyaml"
-]
-
-dependencies = [
-  "pandas",
-  "scikit-learn",
-  "joblib",
-  "streamlit",
   "pyyaml",
   "fastapi",
   "uvicorn[standard]",
