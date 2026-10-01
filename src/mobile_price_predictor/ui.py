@@ -9,6 +9,7 @@ import requests
 import os
 
 from mobile_price_predictor.config import load_config
+import time
 
 
 DESCRIPTIONS = {
@@ -67,6 +68,14 @@ def load_sample_df(cfg):
     return None
 
 
+@st.cache_data(ttl=300)
+def get_sample_df_cached(path: str):
+    p = Path(path)
+    if p.exists():
+        return pd.read_csv(p)
+    return None
+
+
 def feature_display(col: str) -> str:
     desc = DESCRIPTIONS.get(col, "")
     if desc:
@@ -105,18 +114,27 @@ def main():
 
     st.info(f"Using backend API at {api_url}")
 
-    # fetch model names from API
-    try:
-        resp = requests.get(f"{api_url.rstrip('/')}/models", timeout=3)
-        resp.raise_for_status()
-        api_models = resp.json()
-    except Exception as exc:
-        st.error(f"Failed to query models from API: {exc}")
-        api_models = []
+    # fetch model names from API (cached in session_state; refresh on demand)
+    if "api_models" not in st.session_state:
+        st.session_state.api_models = None
+    col_refresh = st.columns([1, 4])
+    with col_refresh[0]:
+        if st.button("Refresh models", key="refresh_api"):
+            st.session_state.api_models = None
+    if st.session_state.api_models is None:
+        try:
+            resp = requests.get(f"{api_url.rstrip('/')}/models", timeout=3)
+            resp.raise_for_status()
+            st.session_state.api_models = resp.json()
+        except Exception as exc:
+            st.error(f"Failed to query models from API: {exc}")
+            st.session_state.api_models = []
 
-    model_choice = st.selectbox("Select model file", options=[""] + api_models)
+    api_models = st.session_state.api_models or []
+    model_choice = st.selectbox("Select model file", options=[""] + api_models, key="select_model_api")
 
-    sample_df = load_sample_df(cfg)
+    test_path = (cfg.get("data") or {}).get("test") or "data/test.csv"
+    sample_df = get_sample_df_cached(test_path)
 
     st.markdown("---")
     st.write("Select features to use in prediction and enter values below.")
@@ -125,7 +143,7 @@ def main():
     cols = available_features(sample_df)
     cols = [c for c in cols if c != "id"]
     display_options = [feature_display(c) for c in cols]
-    selection = st.multiselect("Choose features", options=display_options)
+    selection = st.multiselect("Choose features", options=display_options, key="choose_features_api")
 
     selected_cols = []
     for disp in selection:
@@ -145,16 +163,49 @@ def main():
         st.write("No features selected")
 
     inputs = {}
-    if st.button("Reset fields"):
+    if st.button("Reset fields", key="reset_api"):
         for c in selected_cols:
             key = f"inp_{c}"
             if key in st.session_state:
                 st.session_state[key] = ""
     for c in selected_cols:
-        val = st.text_input(f"{feature_label(c)}", key=f"inp_{c}")
-        inputs[c] = {"value": val, "type": "text"}
+        # If sample data is available, mimic local widgets (binary selectboxes, numeric text inputs, categorical selects)
+        if sample_df is not None and c in sample_df.columns and pd.api.types.is_numeric_dtype(sample_df[c]):
+            vals = pd.unique(sample_df[c].dropna())
+            vals_set = set([str(v) for v in vals.tolist()]) if hasattr(vals, 'tolist') else set([str(vals)])
+            vmin = float(sample_df[c].min())
+            vmax = float(sample_df[c].max())
+            placeholder = f"min: {vmin}, max: {vmax}"
+            key = f"inp_{c}"
+            if vals_set.issubset({"0", "1", "0.0", "1.0", "True", "False"}) or set(vals.tolist()).issubset({0, 1}):
+                val = st.selectbox(f"{feature_label(c)}", options=["", "Yes", "No"], key=key)
+                if val == "":
+                    inputs[c] = {"value": None, "min": 0, "max": 1, "type": "number", "widget": "binary"}
+                else:
+                    inputs[c] = {"value": (1 if val == "Yes" else 0), "min": 0, "max": 1, "type": "number", "widget": "binary"}
+            else:
+                val = st.text_input(f"{feature_label(c)}", placeholder=placeholder, key=key)
+                inputs[c] = {"value": val, "min": vmin, "max": vmax, "type": "number", "widget": "text"}
+        elif sample_df is not None and c in sample_df.columns:
+            opts = pd.unique(sample_df[c].dropna())
+            vals = opts.tolist() if hasattr(opts, 'tolist') else [opts]
+            vals_set = set([str(v) for v in vals])
+            key = f"inp_{c}"
+            if vals_set.issubset({"0", "1", "True", "False"}) or set(vals).issubset({0, 1, True, False}):
+                val = st.selectbox(f"{feature_label(c)}", options=["", "Yes", "No"], key=key)
+                if val == "":
+                    inputs[c] = {"value": None, "type": "number", "widget": "binary"}
+                else:
+                    inputs[c] = {"value": (1 if val == "Yes" else 0), "type": "number", "widget": "binary"}
+            else:
+                opt_list = [str(o) for o in vals]
+                val = st.selectbox(f"{feature_label(c)}", options=[""] + opt_list, key=key)
+                inputs[c] = {"value": (val if val != "" else None), "type": "text", "widget": "select"}
+        else:
+            val = st.text_input(f"{feature_label(c)}", key=f"inp_{c}")
+            inputs[c] = {"value": val, "type": "text"}
 
-    if st.button("Predict"):
+    if st.button("Predict", key="predict_api"):
         payload = {"features": {}}
         for k, meta in inputs.items():
             sval = meta.get("value")
@@ -170,24 +221,42 @@ def main():
             r = requests.post(f"{api_url.rstrip('/')}/predict", json=payload, timeout=5)
             r.raise_for_status()
             data = r.json()
-            st.success(f"Prediction: {data.get('predictions')}")
+            labels = data.get("labels")
+            preds = data.get("predictions")
+            if labels:
+                st.success(f"Prediction: {labels}")
+            elif preds is not None:
+                st.success(f"Prediction: {preds}")
+            else:
+                st.success("Prediction returned (no labels)")
         except Exception as exc:
             st.error(f"API request failed: {exc}")
+
+    # When API mode is configured, do not render local model UI
+    return
 
     models = list_models(cfg)
     if not models:
         st.warning("No model files found in models/*.joblib. Train a model first.")
-    model_choice = st.selectbox("Select model file", options=models or [""], format_func=lambda x: Path(x).name)
+    model_choice = st.selectbox("Select model file", options=models or [""], format_func=lambda x: Path(x).name, key="select_model_local")
 
     model = None
     if model_choice:
         try:
-            model = joblib.load(model_choice)
+            # cache loaded models in session to avoid reloading on each rerun
+            if "model_cache" not in st.session_state:
+                st.session_state.model_cache = {}
+            if model_choice in st.session_state.model_cache:
+                model = st.session_state.model_cache[model_choice]
+            else:
+                model = joblib.load(model_choice)
+                st.session_state.model_cache[model_choice] = model
             st.success(f"Loaded model: {Path(model_choice).name}")
         except Exception as exc:
             st.error(f"Failed to load model: {exc}")
 
-    sample_df = load_sample_df(cfg)
+    test_path = (cfg.get("data") or {}).get("test") or "data/test.csv"
+    sample_df = get_sample_df_cached(test_path)
 
     st.markdown("---")
     st.write("Select features to use in prediction and enter values below.")
@@ -203,7 +272,7 @@ def main():
     # filter out 'id' if present
     cols = [c for c in cols if c != "id"]
     display_options = [feature_display(c) for c in cols]
-    selection = st.multiselect("Choose features", options=display_options)
+    selection = st.multiselect("Choose features", options=display_options, key="choose_features_local")
 
     selected_cols = []
     for disp in selection:
@@ -223,7 +292,7 @@ def main():
         st.write("No features selected")
 
     inputs = {}
-    if st.button("Reset fields"):
+    if st.button("Reset fields", key="reset_local"):
         for c in selected_cols:
             key = f"inp_{c}"
             if key in st.session_state:
@@ -266,7 +335,7 @@ def main():
             val = st.text_input(f"{c}", placeholder="enter value", key=f"inp_{c}")
             inputs[c] = {"value": val, "type": "number", "min": None, "max": None}
 
-    if st.button("Preview aligned features") and model is not None:
+    if st.button("Preview aligned features", key="preview_local") and model is not None:
         try:
             row = {}
             for k, meta in inputs.items():
@@ -312,7 +381,7 @@ def main():
         except Exception as exc:
             st.error(f"Failed to prepare preview: {exc}")
 
-    if st.button("Predict"):
+    if st.button("Predict", key="predict_local"):
         if model is None:
             st.error("No model loaded")
         else:

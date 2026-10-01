@@ -87,7 +87,14 @@ def main():
             r = requests.post(f"{API_URL}/predict", json=payload, timeout=5)
             r.raise_for_status()
             data = r.json()
-            st.success(f"Prediction: {data.get('predictions')}")
+            labels = data.get("labels")
+            preds = data.get("predictions")
+            if labels:
+                st.success(f"Prediction: {labels}")
+            elif preds is not None:
+                st.success(f"Prediction: {preds}")
+            else:
+                st.success("Prediction returned (no labels)")
         except Exception as exc:
             st.error(f"API request failed: {exc}")
 

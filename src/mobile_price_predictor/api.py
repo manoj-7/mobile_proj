@@ -15,6 +15,13 @@ MODELS_DIR = Path("models")
 _models: Dict[str, Any] = {}
 _models_lock = threading.Lock()
 
+PRICE_LABELS = {
+    0: "Low",
+    1: "Medium",
+    2: "High",
+    3: "Very High",
+}
+
 
 class PredictRequest(BaseModel):
     model: Optional[str] = None
@@ -68,8 +75,41 @@ def predict(req: PredictRequest):
     # build DataFrame with a single row
     try:
         df = pd.DataFrame([req.features])
-        X = df.select_dtypes(include=["number"]).fillna(0)
+
+        # If the model exposes expected feature names, align input to them
+        expected = None
+        if hasattr(mobj, "feature_names_in_"):
+            try:
+                expected = list(mobj.feature_names_in_)
+            except Exception:
+                expected = None
+
+        if expected is not None:
+            # ensure all expected columns exist, fill missing with zeros
+            for c in expected:
+                if c not in df.columns:
+                    df[c] = 0
+            # drop unexpected columns
+            unexpected = [c for c in df.columns if c not in expected]
+            if unexpected:
+                df = df.drop(columns=unexpected)
+            # reorder columns to expected order
+            df = df[expected]
+            # coerce numeric where possible
+            for col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            X = df
+        else:
+            # fallback: use numeric columns only
+            X = df.select_dtypes(include=["number"]).fillna(0)
+
         preds = mobj.predict(X)
-        return {"predictions": preds.tolist()}
+        # Map numeric predictions to human-friendly labels when possible
+        try:
+            labels = [PRICE_LABELS.get(int(p), str(p)) for p in preds.tolist()]
+        except Exception:
+            labels = [str(p) for p in preds.tolist()]
+        return {"predictions": preds.tolist(), "labels": labels}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        # Return a clearer error for bad input
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}")
