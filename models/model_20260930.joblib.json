@@ -1,0 +1,6 @@
+{
+  "created_at": "2026-09-30T23:59:25.438490Z",
+  "accuracy": 0.8925,
+  "n_estimators": 200,
+  "model_path": "models\\model_20260930.joblib"
+}

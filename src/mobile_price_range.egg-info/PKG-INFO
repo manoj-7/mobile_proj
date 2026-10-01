@@ -8,3 +8,6 @@ Requires-Dist: scikit-learn
 Requires-Dist: joblib
 Requires-Dist: streamlit
 Requires-Dist: pyyaml
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+Requires-Dist: requests

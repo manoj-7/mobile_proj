@@ -3,3 +3,6 @@ scikit-learn
 joblib
 streamlit
 pyyaml
+fastapi
+uvicorn[standard]
+requests
