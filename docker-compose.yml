@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  backend:
+    build: .
+    image: mobile-price-ml:latest
+    command: uvicorn mobile_price_predictor.api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  ui:
+    build: .
+    image: mobile-price-ml:latest
+    command: streamlit run src/mobile_price_predictor/ui.py --server.port=8501 --server.address=0.0.0.0
+    environment:
+      - MOBILE_API_URL=http://backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+    restart: unless-stopped

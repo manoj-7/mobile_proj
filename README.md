@@ -43,6 +43,37 @@ $env:MOBILE_API_URL = "http://localhost:8000"
 streamlit run src/mobile_price_predictor/ui.py
 ```
 
+Run the API (development)
+
+You can run the FastAPI backend locally using `uvicorn`. From the project root run the commands below — `mobile_price_predictor.api:app` is the ASGI app entrypoint.
+
+Bash / macOS / WSL:
+
+```bash
+# install dependencies (if not already)
+pip install -r requirements.txt
+
+# run with auto-reload for development (listen on localhost:8000)
+python -m uvicorn mobile_price_predictor.api:app --reload --host 127.0.0.1 --port 8000
+```
+
+PowerShell (Windows):
+
+```powershell
+# run with auto-reload and listen on all interfaces (useful for container/VM access)
+python -m uvicorn mobile_price_predictor.api:app --reload --host 0.0.0.0 --port 8000
+```
+
+Production (no reload, multiple workers):
+
+```bash
+python -m uvicorn mobile_price_predictor.api:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+Notes:
+- If you run the UI locally, point `MOBILE_API_URL` to the backend (for example `http://localhost:8000`).
+- The `--reload` flag is for development only and should not be used in production.
+
 See `API_CONTRACT.md` for the full backend contract (endpoints, request/response schemas, examples, and error codes).
 
 4. Run batch predictions from CSV:
